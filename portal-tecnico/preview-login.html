@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Pinheiro OS — Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100dvh;
+      font-family: 'DM Sans', 'Outfit', system-ui, sans-serif;
+      background: linear-gradient(170deg, #F6FAF6 0%, #EDF5ED 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      padding: 20px 14px;
+    }
+
+    /* ── Orbs de fundo ─────────────────────────────────────── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(40px);
+    }
+    .orb-1 {
+      top: -15%; left: -10%;
+      width: 360px; height: 360px;
+      background: radial-gradient(circle, rgba(22,163,74,.08) 0%, transparent 60%);
+    }
+    .orb-2 {
+      bottom: -15%; right: -10%;
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, rgba(22,163,74,.05) 0%, transparent 60%);
+    }
+
+    /* ── Shell central ─────────────────────────────────────── */
+    .shell {
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+      animation: fadeInUp .5s ease;
+    }
+
+    /* ── Logo ──────────────────────────────────────────────── */
+    .logo-wrap {
+      display: inline-block;
+      position: relative;
+      margin-bottom: 8px;
+    }
+    .logo-glow {
+      position: absolute;
+      inset: -22px;
+      background: radial-gradient(ellipse, rgba(22,163,74,.15) 0%, transparent 70%);
+      border-radius: 50%;
+      animation: glow 3s ease-in-out infinite;
+    }
+    .logo-img {
+      width: 70%;
+      max-width: 260px;
+      min-width: 150px;
+      position: relative;
+      filter: drop-shadow(0 4px 16px rgba(22,163,74,.25));
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ── Tagline ───────────────────────────────────────────── */
+    .tagline {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .7rem;
+      color: #16A34A;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      min-height: 1.2em;
+    }
+
+    /* ── Clock ─────────────────────────────────────────────── */
+    .clock {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .7rem;
+      color: #6B7280;
+      letter-spacing: .06em;
+      margin-bottom: 22px;
+    }
+
+    /* ── Auth Card ─────────────────────────────────────────── */
+    .auth-card {
+      background: #ffffff;
+      border: 1px solid #DDE8DD;
+      border-radius: 20px;
+      padding: 28px 22px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
+      text-align: left;
+    }
+
+    /* ── Labels ────────────────────────────────────────────── */
+    .auth-label {
+      display: block;
+      font-size: .7rem;
+      font-weight: 700;
+      color: #16A34A;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 7px;
+    }
+
+    /* ── Inputs ────────────────────────────────────────────── */
+    .auth-input {
+      width: 100%;
+      padding: 13px 15px;
+      font-size: .95rem;
+      border-radius: 12px;
+      background: rgba(22,163,74,.04);
+      border: 1px solid #DDE8DD;
+      color: #0D1F0D;
+      outline: none;
+      font-family: inherit;
+      transition: border-color .15s, background .15s;
+    }
+    .auth-input:focus {
+      border-color: #16A34A;
+      background: rgba(22,163,74,.08);
+    }
+
+    .input-wrap { margin-bottom: 14px; }
+    .input-wrap-last { margin-bottom: 18px; }
+    .input-relative { position: relative; }
+    .pwd-toggle {
+      position: absolute;
+      right: 12px; top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #16A34A;
+      padding: 6px;
+      display: flex;
+    }
+
+    /* ── Primary button ────────────────────────────────────── */
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #16A34A, #15803d);
+      color: #ffffff;
+      border: none;
+      font-size: .95rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: inherit;
+      letter-spacing: .02em;
+      box-shadow: 0 4px 16px rgba(22,163,74,.3);
+      transition: transform .12s ease, opacity .12s;
+    }
+    .btn-primary:active { transform: scale(.97); }
+
+    /* ── Ghost button ──────────────────────────────────────── */
+    .btn-ghost {
+      width: 100%;
+      padding: 11px;
+      border-radius: 12px;
+      background: none;
+      border: 1px solid #DDE8DD;
+      color: #16A34A;
+      font-size: .82rem;
+      cursor: pointer;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-top: 14px;
+      transition: all .2s;
+    }
+    .btn-ghost:hover { background: #F6FAF6; }
+
+    /* ── Footer ────────────────────────────────────────────── */
+    .footer {
+      margin-top: 14px;
+      font-size: .66rem;
+      color: #6B7280;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: .06em;
+    }
+
+    /* ── Animations ────────────────────────────────────────── */
+    @keyframes glow {
+      0%, 100% { transform: scale(1); opacity: .7; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="shell">
+
+    <!-- Logo -->
+    <div class="logo-wrap">
+      <div class="logo-glow"></div>
+      <img class="logo-img" src="public/pinheiro-logo.svg" alt="Pinheiro OS"/>
+    </div>
+
+    <!-- Tagline -->
+    <div class="tagline" id="tagline">🔧 Ordens de serviço em campo</div>
+
+    <!-- Clock -->
+    <div class="clock" id="clock">---</div>
+
+    <!-- Auth Card -->
+    <div class="auth-card">
+      <div class="input-wrap">
+        <label class="auth-label">Login</label>
+        <input class="auth-input" type="text" placeholder="seu.login" autocomplete="username"/>
+      </div>
+
+      <div class="input-wrap-last">
+        <label class="auth-label">Senha</label>
+        <div class="input-relative">
+          <input class="auth-input" type="password" placeholder="••••••••" style="padding-right:48px"/>
+          <button class="pwd-toggle" type="button" aria-label="Mostrar senha">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn-primary" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        Entrar
+      </button>
+
+      <button class="btn-ghost" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+        </svg>
+        Esqueci minha senha
+      </button>
+    </div>
+
+    <div class="footer">Portal do Técnico · Pinheiro OS</div>
+  </div>
+
+  <script>
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      const d = now.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' }).toUpperCase();
+      const t = now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      document.getElementById('clock').textContent = d + ' · ' + t;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Taglines
+    const tags = [
+      '🔧 Ordens de serviço em campo',
+      '📡 Sinal e diagnóstico FTTH',
+      '🗺️ Rotas otimizadas e GPS',
+      '📸 Fotos e check-in instantâneo',
+      '⚡ Portal do Técnico · Pinheiro OS',
+    ];
+    let idx = 0;
+    setInterval(() => {
+      idx = (idx + 1) % tags.length;
+      document.getElementById('tagline').textContent = tags[idx];
+    }, 3000);
+  </script>
+</body>
+</html>

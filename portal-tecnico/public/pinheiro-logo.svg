@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 68" fill="none" role="img" aria-label="Pinheiro OS">
+  <defs>
+    <linearGradient id="badge-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#15803d"/>
+    </linearGradient>
+    <linearGradient id="tree-shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="white" stop-opacity="1"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0.88"/>
+    </linearGradient>
+    <filter id="badge-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#16A34A" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- ── Icon badge ─────────────────────────────────────────── -->
+  <rect x="2" y="2" width="64" height="64" rx="16" fill="url(#badge-grad)" filter="url(#badge-shadow)"/>
+
+  <!-- ── Pine tree — 3 non-overlapping tiers + trunk ──────── -->
+  <!-- Tier 1 · top (smallest) -->
+  <polygon points="34,8 24,22 44,22" fill="url(#tree-shade)"/>
+
+  <!-- Tier 2 · middle -->
+  <polygon points="34,27 15,44 53,44" fill="url(#tree-shade)"/>
+
+  <!-- Tier 3 · bottom (widest) -->
+  <polygon points="34,49 7,63 61,63" fill="url(#tree-shade)"/>
+
+  <!-- Trunk -->
+  <rect x="31" y="63" width="6" height="4" rx="1.5" fill="white" opacity="0.75"/>
+
+  <!-- ── Divider ─────────────────────────────────────────────── -->
+  <rect x="80" y="12" width="1.5" height="44" rx="0.75" fill="#DDE8DD"/>
+
+  <!-- ── Brand name: PINHEIRO ───────────────────────────────── -->
+  <text
+    x="94" y="36"
+    font-family="'Arial Black', 'Arial', Helvetica, sans-serif"
+    font-weight="900"
+    font-size="23"
+    letter-spacing="-0.4"
+    fill="#0D1F0D">PINHEIRO</text>
+
+  <!-- ── OS pill badge ──────────────────────────────────────── -->
+  <rect x="94" y="43" width="30" height="16" rx="5" fill="#16A34A"/>
+  <text
+    x="109" y="55"
+    font-family="'Arial Black', Arial, Helvetica, sans-serif"
+    font-weight="800"
+    font-size="9"
+    fill="white"
+    text-anchor="middle"
+    letter-spacing="2">OS</text>
+</svg>

@@ -1,0 +1,20 @@
+{
+  "name": "Pinheiro OS · Técnico",
+  "short_name": "Pinheiro",
+  "description": "Portal do Técnico — Pinheiro OS",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F6FAF6",
+  "theme_color": "#16A34A",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/pinheiro-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

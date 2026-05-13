@@ -1,0 +1,27 @@
+{
+  "name": "pinheiro-os",
+  "version": "0.1.0",
+  "description": "Pinheiro OS — Gestão de Ordens de Serviço de campo, agrega SGP + Maxxi",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build:portal": "cd portal-tecnico && npm install && npm run build",
+    "build:all": "npm install && npm run build:portal"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.12.0",
+    "web-push": "^3.6.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
