@@ -218,7 +218,8 @@ async function fetchMaxxi(path) {
   try {
     const res = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${process.env.MAXXI_API_KEY}`,
+        // Maxxi v1 usa X-API-Key (formato `maxxi_<prefix>_<secret>`)
+        'X-API-Key': process.env.MAXXI_API_KEY,
         'Accept': 'application/json',
       },
       signal: ctrl.signal,
