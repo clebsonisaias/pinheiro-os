@@ -97,10 +97,14 @@ export async function withTx(fn) {
 export async function ensureDatabase() {
   // Se o usuário forneceu DATABASE_URL_PINHEIRO explicitamente, assumimos
   // que ele administrou o banco manualmente — não tentamos criar.
-  if (process.env.DATABASE_URL_PINHEIRO) return;
+  if (process.env.DATABASE_URL_PINHEIRO) {
+    assertConnectionStringValida(process.env.DATABASE_URL_PINHEIRO, 'DATABASE_URL_PINHEIRO');
+    return;
+  }
 
   const base = process.env.DATABASE_URL;
   if (!base) throw new Error('DATABASE_URL não definida');
+  assertConnectionStringValida(base, 'DATABASE_URL');
 
   assertIdentSeguro(DB_NAME);
 

@@ -109,24 +109,58 @@ app.use((err, req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || 'erro interno' });
 });
 
+/* ── Validação de env vars ANTES de qualquer coisa ─────────────────────── */
+function validarEnvCriticas() {
+  const url = process.env.DATABASE_URL_PINHEIRO || process.env.DATABASE_URL || '';
+  if (!url) {
+    log.warn('━'.repeat(64));
+    log.warn('⚠️  DATABASE_URL não definida!');
+    log.warn('   Configure no Coolify → Environment Variables → DATABASE_URL');
+    log.warn('━'.repeat(64));
+    return false;
+  }
+  if (/\b(USER|SENHA|PASS|PASSWORD|HOST|HOSTNAME|DB_NAME|DBNAME)\b/.test(url)) {
+    log.error('━'.repeat(64));
+    log.error('⛔ DATABASE_URL contém PLACEHOLDERS do .env.example não substituídos!');
+    log.error('');
+    log.error('   Você precisa SUBSTITUIR os valores no painel do Coolify:');
+    log.error('     1. Abra o app Pinheiro no Coolify');
+    log.error('     2. Aba "Environment Variables"');
+    log.error('     3. Edite DATABASE_URL — use os MESMOS valores do Maxxi');
+    log.error('        (o Pinheiro troca o nome do db automaticamente)');
+    log.error('     4. Salve e clique em "Redeploy"');
+    log.error('');
+    log.error('   Exemplo do que NÃO pode ter:');
+    log.error('     postgres://USER:SENHA@HOST:5432/maxxi_db   ← errado');
+    log.error('   Exemplo correto:');
+    log.error('     postgres://maxxi:abc123@10.0.0.5:5432/maxxi_db');
+    log.error('━'.repeat(64));
+    return false;
+  }
+  return true;
+}
+
 /* ── Boot ─────────────────────────────────────────────────────────────── */
 (async () => {
   try {
-    if (process.env.DATABASE_URL || process.env.DATABASE_URL_PINHEIRO) {
+    const envOk = validarEnvCriticas();
+    if (envOk) {
       await ensureDatabase();
       await migrate();
       await seedAdmin();
       log.info('[pinheiro] banco pronto');
     } else {
-      log.warn('DATABASE_URL não definida — backend rodando sem DB!');
+      log.warn('[pinheiro] subindo em modo DEGRADADO — sem DB. Só /api/health responde.');
     }
 
-    if (process.env.MAXXI_API_URL && process.env.MAXXI_API_KEY) {
+    // Sync só roda se DB estiver disponível
+    const envOkAgora = validarEnvCriticas();
+    if (envOkAgora && process.env.MAXXI_API_URL && process.env.MAXXI_API_KEY) {
       iniciarSyncMaxxi({
         intervaloMs: parseInt(process.env.MAXXI_SYNC_INTERVAL_MS || '30000'),
       });
     } else {
-      log.info('Sync Maxxi desativado (MAXXI_API_URL/MAXXI_API_KEY ausentes)');
+      log.info('Sync Maxxi desativado (env ausente ou DB indisponível)');
     }
 
     app.listen(PORT, () => {
