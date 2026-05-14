@@ -3,17 +3,23 @@
 
 # ── Stage 1: build do frontend ────────────────────────────────────────────
 FROM node:20-alpine AS portal-build
+# Força modo "development" durante o build, senão npm pula devDependencies
+# (vite, @vitejs/plugin-react). Coolify costuma injetar NODE_ENV=production
+# em build-time o que quebra tudo.
+ENV NODE_ENV=development
 WORKDIR /build
 COPY portal-tecnico/package*.json ./
-RUN npm install --no-audit --no-fund
+# --include=dev é o cinto-e-suspensório: garante devDeps independente de NODE_ENV
+RUN npm install --include=dev --no-audit --no-fund
 COPY portal-tecnico/ ./
 RUN npm run build
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────
 FROM node:20-alpine
+ENV NODE_ENV=production
 WORKDIR /app
 
-# Backend deps
+# Backend deps (somente production)
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 
