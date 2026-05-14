@@ -33,9 +33,9 @@ COPY src/ ./src/
 # SPA buildado vem do stage anterior
 COPY --from=portal-build /build/dist ./portal-tecnico/dist
 
-# Healthcheck via /api/health
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -qO- http://localhost:4000/api/health || exit 1
+# Healthcheck via /api/health usando fetch nativo do Node 20 (sem dep de wget/curl).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 EXPOSE 4000
 CMD ["node", "server.js"]

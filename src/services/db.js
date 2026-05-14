@@ -30,10 +30,25 @@ function assertIdentSeguro(nome) {
   }
 }
 
+function assertConnectionStringValida(url, source) {
+  // Detecta placeholders comuns do .env.example deixados intactos
+  const placeholders = /\b(USER|SENHA|PASS|PASSWORD|HOST|HOSTNAME|DB_NAME|DBNAME)\b/;
+  if (placeholders.test(url)) {
+    throw new Error(
+      `${source} contém placeholders não substituídos (USER/SENHA/HOST). ` +
+      `Configure os valores reais no painel do Coolify.`
+    );
+  }
+}
+
 function buildUrl() {
-  if (process.env.DATABASE_URL_PINHEIRO) return process.env.DATABASE_URL_PINHEIRO;
+  if (process.env.DATABASE_URL_PINHEIRO) {
+    assertConnectionStringValida(process.env.DATABASE_URL_PINHEIRO, 'DATABASE_URL_PINHEIRO');
+    return process.env.DATABASE_URL_PINHEIRO;
+  }
   const base = process.env.DATABASE_URL;
   if (!base) throw new Error('DATABASE_URL não definida');
+  assertConnectionStringValida(base, 'DATABASE_URL');
   // Substitui o nome do db (último segmento do path) por `pinheiro_os`.
   // Preserva querystring (sslmode, etc).
   return base.replace(/\/[^/?]+(\?|$)/, `/${DB_NAME}$1`);
