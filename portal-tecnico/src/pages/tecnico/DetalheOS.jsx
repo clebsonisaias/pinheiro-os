@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useStore } from '../../store';
-import useConfirm from '../../hooks/useConfirm';
 import { useTec } from './TecnicoContext';
 import { T, ST, TP, CL_PADRAO, fmtH, fmtDt, tipoLabel, api, apiJson } from './shared';
 import { StBadge } from './SharedComponents';

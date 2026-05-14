@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import useConfirm from '../../hooks/useConfirm';
 import { useTec } from './TecnicoContext';
 import { T, ST, fmtDt, api, apiJson } from './shared';
 import { StBadge } from './SharedComponents';
