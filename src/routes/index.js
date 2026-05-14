@@ -28,11 +28,14 @@ try {
   }
 } catch {}
 
-router.get('/api/health', (_req, res) => {
+router.get('/api/health', (req, res) => {
+  const boot = req.app.locals.bootState || { db: 'unknown', dbError: null };
   res.json({
     ok:      true,
     service: 'pinheiro-os',
     version: _version,
+    db:      boot.db,         // 'ok' | 'degraded' | 'pending'
+    db_error: boot.dbError,   // mensagem em caso de degradado
     ts:      new Date().toISOString(),
   });
 });
