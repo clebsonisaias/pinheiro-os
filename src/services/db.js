@@ -14,16 +14,26 @@
  * `ensureDatabase()` conecta no DB administrativo `postgres` e cria o
  * `pinheiro_os` se necessário (idempotente).
  */
-import pg from "pg";
+import pg from 'pg';
+import { log } from './logger.js';
+
 const { Pool } = pg;
 
 const DB_NAME = 'pinheiro_os';
 let pool = null;
 
+// Whitelist de nomes válidos pra DATABASE — defesa em profundidade contra
+// SQL injection mesmo sabendo que DB_NAME é const.
+function assertIdentSeguro(nome) {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/i.test(nome)) {
+    throw new Error(`Nome de database inválido: ${nome}`);
+  }
+}
+
 function buildUrl() {
   if (process.env.DATABASE_URL_PINHEIRO) return process.env.DATABASE_URL_PINHEIRO;
   const base = process.env.DATABASE_URL;
-  if (!base) throw new Error("DATABASE_URL não definida");
+  if (!base) throw new Error('DATABASE_URL não definida');
   // Substitui o nome do db (último segmento do path) por `pinheiro_os`.
   // Preserva querystring (sslmode, etc).
   return base.replace(/\/[^/?]+(\?|$)/, `/${DB_NAME}$1`);
@@ -35,10 +45,10 @@ export function getPool() {
       connectionString: buildUrl(),
       ssl: false,
       max: 8,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 8000,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 8_000,
     });
-    pool.on("error", (err) => console.error("❌ PG pool:", err.message));
+    pool.on('error', (err) => log.error('PG pool:', err.message));
   }
   return pool;
 }
@@ -75,14 +85,16 @@ export async function ensureDatabase() {
   if (process.env.DATABASE_URL_PINHEIRO) return;
 
   const base = process.env.DATABASE_URL;
-  if (!base) throw new Error("DATABASE_URL não definida");
+  if (!base) throw new Error('DATABASE_URL não definida');
+
+  assertIdentSeguro(DB_NAME);
 
   const adminUrl = base.replace(/\/[^/?]+(\?|$)/, '/postgres$1');
   const admin = new Pool({
     connectionString: adminUrl,
     ssl: false,
     max: 1,
-    connectionTimeoutMillis: 8000,
+    connectionTimeoutMillis: 8_000,
   });
 
   try {
@@ -91,14 +103,17 @@ export async function ensureDatabase() {
       [DB_NAME]
     );
     if (!rows.length) {
-      await admin.query(`CREATE DATABASE ${DB_NAME}`);
-      console.log(`✅ [pinheiro] database '${DB_NAME}' criada`);
+      // CREATE DATABASE não aceita parameter binding — por isso a whitelist
+      // acima é mandatória. Identifier seguro: somente [a-z0-9_], comprimento
+      // limitado, validado.
+      await admin.query(`CREATE DATABASE "${DB_NAME}"`);
+      log.info(`[pinheiro] database '${DB_NAME}' criada`);
     } else {
-      console.log(`ℹ️  [pinheiro] database '${DB_NAME}' já existe`);
+      log.info(`[pinheiro] database '${DB_NAME}' já existe`);
     }
   } catch (e) {
-    console.warn(`⚠️ [pinheiro] não foi possível verificar/criar '${DB_NAME}': ${e.message}`);
-    console.warn(`   Crie manualmente: psql -c "CREATE DATABASE ${DB_NAME};"`);
+    log.warn(`[pinheiro] não foi possível verificar/criar '${DB_NAME}': ${e.message}`);
+    log.warn(`   Crie manualmente: psql -c 'CREATE DATABASE ${DB_NAME};'`);
     throw e;
   } finally {
     await admin.end().catch(() => {});

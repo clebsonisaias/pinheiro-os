@@ -3,29 +3,45 @@
  *
  * Como o Pinheiro é um servidor independente, tudo é montado em raiz.
  * Endpoints finais ficam em:
- *   /api/agentes/{login,logout,me,me/senha}
+ *   /api/agentes/{login,logout,me,me/senha,config,posicao}
  *   /api/os/{minhas,fila,:id,...}
  *   /api/ia/{transcribe,diagnostico/:id,duplicadas/:id,...}
  *   /api/health
  */
 import { Router } from 'express';
-import authRouter from './auth.js';
-import osRouter   from './os.js';
-import iaRouter   from './ia.js';
+import { readFileSync, existsSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import authRouter   from './auth.js';
+import agenteRouter from './agente.js';
+import osRouter     from './os.js';
+import iaRouter     from './ia.js';
 
 const router = Router();
 
+// Versão lida do package.json — não duplica
+let _version = '0.0.0';
+try {
+  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'package.json');
+  if (existsSync(pkgPath)) {
+    _version = JSON.parse(readFileSync(pkgPath, 'utf8')).version || _version;
+  }
+} catch {}
+
 router.get('/api/health', (_req, res) => {
   res.json({
-    ok: true,
+    ok:      true,
     service: 'pinheiro-os',
-    version: '0.1.0',
-    ts: new Date().toISOString(),
+    version: _version,
+    ts:      new Date().toISOString(),
   });
 });
 
+// /api/agentes — auth + config + posicao (dois routers compõem no mesmo prefix)
 router.use('/api/agentes', authRouter);
-router.use('/api/os',      osRouter);
-router.use('/api/ia',      iaRouter);
+router.use('/api/agentes', agenteRouter);
+
+router.use('/api/os', osRouter);
+router.use('/api/ia', iaRouter);
 
 export default router;

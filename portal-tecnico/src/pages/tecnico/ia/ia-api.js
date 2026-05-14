@@ -1,7 +1,6 @@
 // ia-api.js — helpers para os endpoints de IA do backend Pinheiro OS
 // Pinheiro é servidor próprio — endpoints resolvem em /api/ia/* same-origin.
 
-
 import { apiJson, getTecToken } from '../shared';
 
 /* ── 1. Transcrição (Voz → texto via Whisper) ───────────────────────────── */
@@ -52,8 +51,9 @@ export async function marcarNaoDuplicada(osIdA, osIdB) {
 }
 
 /* ── 5. Heartbeat GPS do técnico ────────────────────────────────────────── */
+// Endpoint migrado pra /api/agentes/posicao (era /api/ia/agentes/posicao).
 export async function reportarPosicao({ lat, lng, accuracy, bateria }) {
-  return apiJson('/api/ia/agentes/posicao', {
+  return apiJson('/api/agentes/posicao', {
     method: 'POST',
     body: JSON.stringify({ lat, lng, accuracy, bateria }),
   });

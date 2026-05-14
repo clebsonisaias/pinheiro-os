@@ -7,56 +7,59 @@
  *
  * Estratégia:
  *   1. Lê /api/v1/ticket-categories pra descobrir IDs/slugs das categorias
- *      "técnico" e "instalação" (mapeamento flexível por nome).
+ *      "técnico" e "instalação" (cache 5 min).
  *   2. Lista tickets dessas categorias modificados desde o último sync.
- *   3. Upsert na tabela `os` usando (fonte='MXX', fonte_id=ticket.id).
- *   4. Mantém o cursor (last_sync_at) em sistema_kv.
+ *   3. Upsert em lotes paralelos na tabela `os` usando (fonte='MXX', fonte_id).
+ *   4. Mantém o cursor (updated_since) em sistema_kv.
+ *
+ * Robustez:
+ *   - Circuit breaker: após N falhas consecutivas pausa por X minutos.
+ *   - Flag `_running` previne overlap se o ciclo demorar mais que o intervalo.
+ *   - Cursor avança só com tickets recebidos com sucesso.
  *
  * Config: MAXXI_API_URL, MAXXI_API_KEY, MAXXI_SYNC_INTERVAL_MS
  */
 import { query, withTx } from './db.js';
+import { log }   from './logger.js';
+import { SYNC }  from './constants.js';
 
-const TIPOS_DESEJADOS = ['tecnico', 'técnico', 'tecnica', 'técnica', 'instalacao', 'instalação'];
+const TIPOS_DESEJADOS_NORMALIZADOS = [
+  'tecnico', 'tecnica', 'instalacao',
+];
 
-// Mapeia category-nome do Maxxi → tipo de OS interno do Pinheiro
+const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
 function mapearTipoOS(categoriaNome) {
-  const n = (categoriaNome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const n = norm(categoriaNome);
   if (n.includes('instal')) return 'instalacao';
   if (n.includes('tecn') || n.includes('manut') || n.includes('repar')) return 'reparo';
   return 'outro';
 }
 
-// Mapeia status do ticket Maxxi → status da OS Pinheiro
 function mapearStatus(statusTicket) {
   const m = {
-    aberto: 'aguardando',
-    em_andamento: 'execucao',
-    fechado: 'concluida',
-    cancelado: 'cancelada',
-    aguardando: 'aguardando',
-    concluido: 'concluida',
+    aberto:        'aguardando',
+    aguardando:    'aguardando',
+    em_andamento:  'execucao',
+    fechado:       'concluida',
+    concluido:     'concluida',
+    cancelado:     'cancelada',
   };
   return m[String(statusTicket || '').toLowerCase()] || 'aguardando';
 }
 
-let _running = false;
-let _timer   = null;
+/* ── Estado interno ──────────────────────────────────────────────────────── */
+let _running   = false;
+let _timer     = null;
+let _falhas    = 0;          // consecutivas
+let _pausaAte  = 0;          // epoch ms (circuit breaker)
 
-export function iniciarSyncMaxxi({ intervaloMs = 30_000 } = {}) {
+export function iniciarSyncMaxxi({ intervaloMs = SYNC.intervalo_ms_default } = {}) {
   if (!process.env.MAXXI_API_URL || !process.env.MAXXI_API_KEY) {
-    console.warn('[sync-maxxi] desabilitado — MAXXI_API_URL/MAXXI_API_KEY ausentes');
+    log.warn('[sync-maxxi] desabilitado — MAXXI_API_URL/MAXXI_API_KEY ausentes');
     return;
   }
-  console.log(`[sync-maxxi] iniciado · intervalo ${intervaloMs}ms · alvo ${process.env.MAXXI_API_URL}`);
-
-  // Garante a tabela sistema_kv (cursor do sync)
-  query(`
-    CREATE TABLE IF NOT EXISTS sistema_kv (
-      chave      TEXT PRIMARY KEY,
-      valor      JSONB,
-      atualizado TIMESTAMPTZ DEFAULT NOW()
-    )
-  `).catch(e => console.warn('[sync-maxxi] kv setup:', e.message));
+  log.info(`[sync-maxxi] iniciado · intervalo ${intervaloMs}ms · alvo ${process.env.MAXXI_API_URL}`);
 
   // Primeira execução em 5s, depois no intervalo
   setTimeout(rodarCiclo, 5_000);
@@ -68,38 +71,59 @@ export function pararSyncMaxxi() {
 }
 
 async function rodarCiclo() {
-  if (_running) return; // evita overlap
+  if (_running) return;
+  if (Date.now() < _pausaAte) return; // circuit breaker pausando
+
   _running = true;
   try {
     const ids = await descobrirCategorias();
     if (!ids.length) {
-      console.warn('[sync-maxxi] nenhuma categoria técnica/instalação encontrada no Maxxi');
+      log.warn('[sync-maxxi] nenhuma categoria técnica/instalação encontrada no Maxxi');
       return;
     }
 
-    const desde = await pegarCursor();
+    const desde   = await pegarCursor();
     const tickets = await listarTicketsRecentes(ids, desde);
-    if (!tickets.length) return;
-
-    let inseridos = 0, atualizados = 0;
-    for (const t of tickets) {
-      const acao = await upsertOS(t);
-      if (acao === 'insert') inseridos++;
-      else if (acao === 'update') atualizados++;
+    if (!tickets.length) {
+      // Sucesso (mesmo que vazio) — zera falhas
+      _falhas = 0;
+      return;
     }
 
-    // Atualiza cursor com o maior `updated_at` dos tickets recebidos
+    // Upsert em lotes paralelos (chunks)
+    let inseridos = 0, atualizados = 0;
+    for (let i = 0; i < tickets.length; i += SYNC.chunk_size) {
+      const chunk = tickets.slice(i, i + SYNC.chunk_size);
+      const results = await Promise.allSettled(chunk.map(upsertOS));
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          if (r.value === 'insert') inseridos++;
+          else if (r.value === 'update') atualizados++;
+        } else {
+          log.warn('[sync-maxxi] upsert falhou:', r.reason?.message);
+        }
+      }
+    }
+
+    // Atualiza cursor com o maior `updated_at` dos tickets
     const maxUpdated = tickets.reduce((m, t) => {
       const u = new Date(t.updated_at || t.atualizado_em || t.created_at).getTime();
-      return u > m ? u : m;
+      return Number.isFinite(u) && u > m ? u : m;
     }, 0);
     if (maxUpdated > 0) await setCursor(new Date(maxUpdated).toISOString());
 
     if (inseridos || atualizados) {
-      console.log(`[sync-maxxi] +${inseridos} novos · ${atualizados} atualizados`);
+      log.info(`[sync-maxxi] +${inseridos} novos · ${atualizados} atualizados`);
     }
+    _falhas = 0; // sucesso → reseta contador
   } catch (e) {
-    console.warn('[sync-maxxi] ciclo falhou:', e.message);
+    _falhas++;
+    log.warn(`[sync-maxxi] ciclo falhou (${_falhas}/${SYNC.max_falhas}):`, e.message);
+    if (_falhas >= SYNC.max_falhas) {
+      _pausaAte = Date.now() + SYNC.pausa_apos_falhas_ms;
+      log.warn(`[sync-maxxi] circuit breaker ativado — pausa de ${SYNC.pausa_apos_falhas_ms/60_000}min`);
+      _falhas = 0;
+    }
   } finally {
     _running = false;
   }
@@ -108,7 +132,6 @@ async function rodarCiclo() {
 /* ── Descobre IDs das categorias técnico/instalação ──────────────────────── */
 let _cacheCategorias = { ids: null, ts: 0 };
 async function descobrirCategorias() {
-  // cache de 5 min — categorias raramente mudam
   if (_cacheCategorias.ids && Date.now() - _cacheCategorias.ts < 5 * 60 * 1000) {
     return _cacheCategorias.ids;
   }
@@ -116,14 +139,14 @@ async function descobrirCategorias() {
   const lista = r?.data || r?.categories || [];
   const filtrados = lista
     .filter(c => {
-      const n = (c.nome || c.name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      return TIPOS_DESEJADOS.some(t => n.includes(t.normalize('NFD').replace(/[̀-ͯ]/g, '')));
+      const n = norm(c.nome || c.name);
+      return TIPOS_DESEJADOS_NORMALIZADOS.some(t => n.includes(t));
     })
     .map(c => c.id);
 
   _cacheCategorias = { ids: filtrados, ts: Date.now() };
-  if (filtrados.length === 0) {
-    console.warn('[sync-maxxi] categorias filtráveis não bateram — verifique nomes no Maxxi');
+  if (!filtrados.length) {
+    log.warn('[sync-maxxi] categorias filtráveis não bateram — verifique nomes no Maxxi');
   }
   return filtrados;
 }
@@ -132,8 +155,6 @@ async function descobrirCategorias() {
 async function listarTicketsRecentes(categoriaIds, desde) {
   const params = new URLSearchParams({
     limit: '200',
-    // Maxxi v1 aceita filtros por categoria; se sua API expor outro nome,
-    // ajuste aqui (ex: tipo_id, ticket_type_id).
     categoria_id: categoriaIds.join(','),
   });
   if (desde) params.set('updated_since', desde);
@@ -144,7 +165,6 @@ async function listarTicketsRecentes(categoriaIds, desde) {
 
 /* ── Upsert na tabela `os` ──────────────────────────────────────────────── */
 async function upsertOS(t) {
-  // Mapeamento defensivo — nomes podem variar entre versões do Maxxi
   const tipo     = mapearTipoOS(t.categoria_nome || t.category_name || t.tipo_nome);
   const status   = mapearStatus(t.status);
   const cliente  = t.cliente_nome || t.cliente?.nome || t.customer_name || null;
@@ -156,7 +176,7 @@ async function upsertOS(t) {
   const sla      = t.sla || t.prazo || null;
   const descr    = t.descricao || t.titulo || t.title || null;
 
-  const result = await withTx(async c => {
+  return withTx(async c => {
     const { rows } = await c.query(
       `INSERT INTO os (fonte, fonte_id, tipo, status, cliente_nome, cliente_doc,
                        cliente_fone, endereco, lat, lng, sla, descricao,
@@ -179,7 +199,6 @@ async function upsertOS(t) {
       [String(t.id), tipo, status, cliente, doc, fone, endereco, lat, lng, sla, descr, JSON.stringify(t)]
     );
 
-    // Grava evento de origem
     if (rows[0]?.inserido) {
       await c.query(
         `INSERT INTO os_eventos (os_id, tipo, dados)
@@ -189,8 +208,6 @@ async function upsertOS(t) {
     }
     return rows[0]?.inserido ? 'insert' : 'update';
   });
-
-  return result;
 }
 
 /* ── Cursor (último sync) em sistema_kv ─────────────────────────────────── */
@@ -214,13 +231,13 @@ async function setCursor(ts) {
 async function fetchMaxxi(path) {
   const url = process.env.MAXXI_API_URL.replace(/\/$/, '') + path;
   const ctrl = new AbortController();
-  const to   = setTimeout(() => ctrl.abort(), 15_000);
+  const to   = setTimeout(() => ctrl.abort(), SYNC.timeout_ms);
   try {
     const res = await fetch(url, {
       headers: {
         // Maxxi v1 usa X-API-Key (formato `maxxi_<prefix>_<secret>`)
         'X-API-Key': process.env.MAXXI_API_KEY,
-        'Accept': 'application/json',
+        'Accept':    'application/json',
       },
       signal: ctrl.signal,
     });

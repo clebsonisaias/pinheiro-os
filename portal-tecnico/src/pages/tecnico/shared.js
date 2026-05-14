@@ -4,9 +4,23 @@
 /* ── Auth ─────────────────────────────────────────────────────────────────── */
 export const LS_TOKEN = 'pinheiro_token';
 export const LS_USER  = 'pinheiro_user';
-export const TOMTOM_KEY = '5jW3vl4d6DeADyg089hZP8PtzERtXaiM';
 
 export function getTecToken() { return localStorage.getItem(LS_TOKEN) || ''; }
+
+/* ── Runtime config (TomTom key, VAPID public) ────────────────────────────── */
+// A chave da TomTom já NÃO vai no bundle — vem via /api/agentes/config após
+// login. Cache em window pra acesso síncrono pelos módulos (route-optimizer).
+let _configPromise = null;
+export function loadConfig() {
+  if (!_configPromise) {
+    _configPromise = apiJson('/api/agentes/config')
+      .then(cfg => { window.__pinheiro_cfg__ = cfg; return cfg; })
+      .catch(e => { console.warn('[config] falhou:', e.message); return {}; });
+  }
+  return _configPromise;
+}
+export function getTomtomKey() { return window.__pinheiro_cfg__?.tomtom_key || null; }
+export function getVapidPublic() { return window.__pinheiro_cfg__?.vapid_public || null; }
 
 // Resposta sintética usada quando uma mutação foi enfileirada offline.
 // Mantém o formato Response pra api() continuar drop-in compatível com

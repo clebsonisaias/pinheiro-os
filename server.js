@@ -7,38 +7,76 @@
  *   - Puxa tickets do Maxxi via /api/v1/* (sync periódico)
  *   - Serve seu próprio frontend React (PWA do técnico)
  */
-import express from 'express';
-import helmet  from 'helmet';
-import cors    from 'cors';
-import rateLimit from 'express-rate-limit';
+import express     from 'express';
+import helmet      from 'helmet';
+import cors        from 'cors';
+import rateLimit   from 'express-rate-limit';
 import 'dotenv/config';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import routerApi from './src/routes/index.js';
-import { ensureDatabase } from './src/services/db.js';
-import { migrate, seedAdmin } from './src/services/db-migrate.js';
-import { iniciarSyncMaxxi } from './src/services/sync-maxxi.js';
+import { ensureDatabase }      from './src/services/db.js';
+import { migrate, seedAdmin }  from './src/services/db-migrate.js';
+import { iniciarSyncMaxxi }    from './src/services/sync-maxxi.js';
+import { log }                 from './src/services/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app  = express();
 const PORT = process.env.PORT || 4000;
 
-/* ── Segurança / parsing ──────────────────────────────────────────────── */
+/* ── Trust proxy (necessário pro req.ip funcionar atrás do Coolify) ─────── */
+app.set('trust proxy', 1);
+
+/* ── Segurança ─────────────────────────────────────────────────────────── */
 app.disable('x-powered-by');
+
+// CSP permissivo mas defensivo — adapte conforme o frontend evoluir.
+// 'self' + Google Fonts + TomTom (se for chamado direto do front).
 app.use(helmet({
-  contentSecurityPolicy: false, // SPA dev — relaxe em prod via reverse proxy
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      'default-src': ["'self'"],
+      'script-src':  ["'self'", "'unsafe-inline'"],          // Vite inlines pequenos chunks
+      'style-src':   ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'font-src':    ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      'img-src':     ["'self'", 'data:', 'blob:', 'https:'],
+      'connect-src': ["'self'", 'https://api.tomtom.com', 'https://*.tomtom.com'],
+      'worker-src':  ["'self'", 'blob:'],
+      'manifest-src':["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
-app.use(cors({ origin: true, credentials: true }));
+
+/* ── CORS — whitelist via env ALLOWED_ORIGINS (CSV) ────────────────────── */
+const allowedOriginsList = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Sem origin = same-origin / curl / mobile native — sempre OK
+    if (!origin) return cb(null, true);
+    // Em dev, libera tudo se ALLOWED_ORIGINS vazio
+    if (allowedOriginsList.length === 0) return cb(null, true);
+    if (allowedOriginsList.includes(origin)) return cb(null, true);
+    log.warn('[cors] bloqueado:', origin);
+    cb(new Error('Origin não permitida'));
+  },
+  credentials: true,
+}));
+
 app.use(express.json({ limit: '20mb' })); // base64 de foto até ~15mb
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-/* ── Rate limit global (rotas públicas de login) ──────────────────────── */
+/* ── Rate limit no login ───────────────────────────────────────────────── */
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
   message: { error: 'muitas tentativas de login, aguarde' },
 });
 app.use('/api/agentes/login', loginLimiter);
@@ -61,13 +99,13 @@ if (existsSync(SPA_DIST)) {
     }
   });
 } else {
-  console.log('ℹ️  SPA dist não existe — backend apenas. Build em: portal-tecnico/');
+  log.info('SPA dist não existe — backend apenas. Build em: portal-tecnico/');
 }
 
 /* ── 404 e error handler ──────────────────────────────────────────────── */
 app.use((req, res) => res.status(404).json({ error: 'rota não encontrada', path: req.path }));
 app.use((err, req, res, _next) => {
-  console.error('[error]', err);
+  log.error('[unhandled]', err);
   res.status(err.status || 500).json({ error: err.message || 'erro interno' });
 });
 
@@ -78,25 +116,24 @@ app.use((err, req, res, _next) => {
       await ensureDatabase();
       await migrate();
       await seedAdmin();
-      console.log('🌲 [Pinheiro OS] banco pronto');
+      log.info('[pinheiro] banco pronto');
     } else {
-      console.warn('⚠️  DATABASE_URL não definida — backend rodando sem DB!');
+      log.warn('DATABASE_URL não definida — backend rodando sem DB!');
     }
 
-    // Sync com Maxxi (puxa tickets do tipo técnico/instalação)
     if (process.env.MAXXI_API_URL && process.env.MAXXI_API_KEY) {
       iniciarSyncMaxxi({
         intervaloMs: parseInt(process.env.MAXXI_SYNC_INTERVAL_MS || '30000'),
       });
     } else {
-      console.log('ℹ️  Sync Maxxi desativado (MAXXI_API_URL/MAXXI_API_KEY ausentes)');
+      log.info('Sync Maxxi desativado (MAXXI_API_URL/MAXXI_API_KEY ausentes)');
     }
 
     app.listen(PORT, () => {
-      console.log(`🌲 Pinheiro OS rodando em http://localhost:${PORT}`);
+      log.info(`🌲 Pinheiro OS rodando em http://localhost:${PORT}`);
     });
   } catch (e) {
-    console.error('❌ Boot falhou:', e);
+    log.error('Boot falhou:', e);
     process.exit(1);
   }
 })();

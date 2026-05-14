@@ -1,17 +1,20 @@
 /**
  * Pinheiro OS — Endpoints de IA.
- * Montado em /ondaos/api/ia/*
+ * Montado em /api/ia/*
  *
  *   POST /transcribe              Whisper (OpenAI) — fallback mock se sem key
- *   GET  /diagnostico/:os_id      Diagnóstico assistido (mock + cache 1h)
- *   GET  /duplicadas/:os_id       Heurística determinística + LLM opcional
+ *   GET  /diagnostico/:os_id      Diagnóstico assistido (mock determinístico + cache 1h)
+ *   GET  /duplicadas/:os_id       Heurística determinística
  *   POST /duplicadas/dispensar    Feedback humano (dataset p/ fine-tuning)
- *   POST /agentes/posicao         GPS heartbeat do técnico
  */
-import { Router } from 'express';
-import multer from 'multer';
-import { query } from '../services/db.js';
-import { authMw } from './auth.js';
+import { Router }   from 'express';
+import multer       from 'multer';
+import crypto       from 'node:crypto';
+import { query }    from '../services/db.js';
+import { authMw }   from './auth.js';
+import { audit }    from '../services/audit.js';
+import { log }      from '../services/logger.js';
+import { DIAG_CACHE_HORAS } from '../services/constants.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,6 +31,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
+      audit(req, 'ia_transcribe_mock');
       return res.json({ texto: '[mock] Defina OPENAI_API_KEY no .env para ativar a transcrição via Whisper.' });
     }
 
@@ -44,14 +48,15 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     });
     if (!r.ok) {
       const e = await r.text();
-      console.warn('[ondaos/whisper]', e.slice(0, 200));
+      log.warn('[ia/whisper]', e.slice(0, 200));
       return res.status(502).json({ error: 'Whisper falhou' });
     }
     const d = await r.json();
+    audit(req, 'ia_transcribe_ok', null, { bytes: req.file.size });
     res.json({ texto: (d.text || '').trim() });
   } catch (e) {
-    console.error('[ondaos/transcribe]', e);
-    res.status(500).json({ error: e.message });
+    log.error('[ia/transcribe]', e);
+    res.status(500).json({ error: 'erro na transcrição' });
   }
 });
 
@@ -64,28 +69,25 @@ router.get('/diagnostico/:os_id', async (req, res) => {
     // Cache de 1h
     const cache = await query(
       `SELECT payload FROM ia_diagnosticos_cache
-       WHERE os_id = $1 AND gerado_em > NOW() - INTERVAL '1 hour'`,
+       WHERE os_id = $1 AND gerado_em > NOW() - INTERVAL '${DIAG_CACHE_HORAS} hour'`,
       [osId]
     );
     if (cache.rows.length) return res.json(cache.rows[0].payload);
 
-    // OS context
     const { rows: osRows } = await query(`SELECT * FROM os WHERE id = $1`, [osId]);
     if (!osRows.length) return res.status(404).json({ error: 'OS não encontrada' });
 
-    // Histórico do cliente (mesmo CPF ou nome similar)
     const { rows: historico } = await query(
       `SELECT id, tipo, status, criada_em, fechada_em
        FROM os
        WHERE id <> $1
-         AND ((cliente_doc IS NOT NULL AND cliente_doc = $2)
-              OR cliente_nome ILIKE '%' || $3 || '%')
+         AND ((cliente_doc IS NOT NULL AND $2 <> '' AND cliente_doc = $2)
+              OR ($3 <> '' AND cliente_nome ILIKE '%' || $3 || '%'))
        ORDER BY criada_em DESC LIMIT 10`,
       [osId, osRows[0].cliente_doc || '', osRows[0].cliente_nome || '__NUNCA__']
     );
 
     // TODO: integrar com LLM (Claude/OpenAI) + dados SGP de sinal reais.
-    // Por enquanto, mock realista baseado no histórico.
     const dado = montarDiagnosticoMock(osRows[0], historico);
 
     await query(
@@ -95,8 +97,8 @@ router.get('/diagnostico/:os_id', async (req, res) => {
     );
     res.json(dado);
   } catch (e) {
-    console.error('[ondaos/diagnostico]', e);
-    res.status(500).json({ error: e.message });
+    log.error('[ia/diagnostico]', e);
+    res.status(500).json({ error: 'erro no diagnóstico' });
   }
 });
 
@@ -131,7 +133,6 @@ router.get('/duplicadas/:os_id', async (req, res) => {
       .filter(m => m.score >= 0.55)
       .sort((a, b) => b.score - a.score);
 
-    // Remove os que já foram marcados como "não é"
     if (matches.length) {
       const ids = matches.map(m => m.os_id);
       const { rows: fb } = await query(
@@ -144,7 +145,8 @@ router.get('/duplicadas/:os_id', async (req, res) => {
     }
     res.json({ matches });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    log.error('[ia/duplicadas]', e.message);
+    res.status(500).json({ error: 'erro ao buscar duplicadas' });
   }
 });
 
@@ -152,34 +154,20 @@ router.get('/duplicadas/:os_id', async (req, res) => {
 router.post('/duplicadas/dispensar', async (req, res) => {
   try {
     const { a, b } = req.body || {};
-    if (!a || !b) return res.status(400).json({ error: 'a e b obrigatórios' });
+    const aN = +a, bN = +b;
+    if (!aN || !bN || aN === bN) return res.status(400).json({ error: 'a e b obrigatórios e distintos' });
+
     await query(
       `INSERT INTO ia_duplicadas_feedback(os_a, os_b, dispensada, agente_id)
        VALUES ($1, $2, true, $3)
        ON CONFLICT (os_a, os_b) DO UPDATE SET dispensada = true, criado_em = NOW()`,
-      [+a, +b, req.agente.agente_id]
+      [aN, bN, req.agente.agente_id]
     );
+    audit(req, 'ia_duplicadas_dispensar', `os:${aN}`, { outro: bN });
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-/* ── POST /agentes/posicao — GPS heartbeat ──────────────────────────────── */
-router.post('/agentes/posicao', async (req, res) => {
-  try {
-    const { lat, lng, accuracy, bateria } = req.body || {};
-    if (lat == null || lng == null) return res.status(400).json({ error: 'lat/lng obrigatórios' });
-    await query(
-      `INSERT INTO agente_posicao(agente_id, lat, lng, accuracy, bateria)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (agente_id) DO UPDATE
-         SET lat = $2, lng = $3, accuracy = $4, bateria = $5, atualizado = NOW()`,
-      [req.agente.agente_id, +lat, +lng, accuracy ?? null, bateria ?? null]
-    );
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    log.error('[ia/dispensar]', e.message);
+    res.status(500).json({ error: 'erro ao registrar feedback' });
   }
 });
 
@@ -206,7 +194,6 @@ function scoreCandidate(atual, c) {
   if (Number.isFinite(km) && km < 0.05) {
     score += 0.3; motivos.push(`${Math.round(km * 1000)}m de distância`);
   }
-  // Bonus se for fonte diferente — é exatamente o caso que queremos pegar
   if (atual.fonte !== c.fonte) {
     score += 0.1; motivos.push(`outra fonte (${c.fonte})`);
   }
@@ -219,9 +206,17 @@ function scoreCandidate(atual, c) {
   };
 }
 
+/**
+ * Gera mock determinístico (mesmo input → mesma saída) baseado em hash do osId.
+ * Com cache de 1h não importa muito, mas evita pegadinhas em testes/dev.
+ */
 function montarDiagnosticoMock(os, historico) {
   const recorrente = historico.length >= 3;
   const tipo = os.tipo || 'reparo';
+
+  // Seed determinístico do osId pra "randomizar" sem random
+  const seed = parseInt(crypto.createHash('md5').update(String(os.id)).digest('hex').slice(0, 8), 16);
+  const pseudoRand = (offset) => ((seed >> (offset % 24)) & 0xff) / 255;
 
   const causa = recorrente
     ? `Problema recorrente — ${historico.length} chamados em 60 dias. Avaliar substituição completa de ONU/drop ou degradação na rede do bairro.`
@@ -242,10 +237,9 @@ function montarDiagnosticoMock(os, historico) {
         { nome: 'Conector mecânico', qtd: 4 },
       ];
 
-  // Série de sinal sintética (decrescente se recorrente, estável se não)
-  const base = -21 - (recorrente ? Math.random() * 2 : 0);
+  const base = -21 - (recorrente ? pseudoRand(0) * 2 : 0);
   const sinal_serie = Array.from({ length: 7 }, (_, i) =>
-    +(base - (recorrente ? i * 0.6 : Math.random() * 0.4 - 0.2)).toFixed(1)
+    +(base - (recorrente ? i * 0.6 : pseudoRand(i + 4) * 0.4 - 0.2)).toFixed(1)
   );
 
   return {
@@ -256,8 +250,9 @@ function montarDiagnosticoMock(os, historico) {
       ? `${historico.length} chamados nos últimos 60 dias deste cliente. Último em ${formatarDia(historico[0]?.criada_em)}.`
       : historico.length
         ? `Último contato em ${formatarDia(historico[0]?.criada_em)} (${historico[0]?.tipo}).`
-        : 'Cliente sem histórico anterior — boa primeira impressão.',
+        : 'Cliente sem histórico anterior.',
     sinal_serie,
+    mock: true, // sinaliza que ainda é mock — quando integrar LLM real, remover
   };
 }
 

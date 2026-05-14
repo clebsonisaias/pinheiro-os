@@ -2,7 +2,7 @@
 // Estratégia: nearest-neighbor heuristic (O(n²)) — bom o suficiente p/ <20 OS.
 // Para mais que isso, ou para considerar tráfego real, usa TomTom Matrix Routing.
 
-import { TOMTOM_KEY } from '../shared';
+import { getTomtomKey, loadConfig } from '../shared';
 
 /* ── Distância haversine em km ───────────────────────────────────────────── */
 export function distKm(a, b) {
@@ -47,15 +47,17 @@ export function resumoRota(origem, ordenadas, velKmh = 25) {
 }
 
 /* ── (Opcional) rota otimizada via TomTom — considera tráfego em tempo real */
-// Retorna `null` se TOMTOM_KEY ausente ou se a API falhar — caller deve
-// tratar como fallback pro nearest-neighbor.
+// Retorna `null` se a TomTom key não estiver disponível (carregada via /api/agentes/config).
 export async function rotaTomTom(origem, paradas) {
-  if (!TOMTOM_KEY || !paradas?.length) return null;
+  if (!paradas?.length) return null;
+  // Garante que a config foi carregada antes
+  await loadConfig().catch(() => {});
+  const key = getTomtomKey();
+  if (!key) return null;
   try {
-    // computeBestOrder reordena os waypoints minimizando tempo de viagem
     const pontos = [origem, ...paradas].map(p => `${p.lat},${p.lng}`).join(':');
     const url = `https://api.tomtom.com/routing/1/calculateRoute/${pontos}/json`
-              + `?key=${TOMTOM_KEY}`
+              + `?key=${encodeURIComponent(key)}`
               + `&computeBestOrder=true`
               + `&travelMode=car`
               + `&traffic=true`

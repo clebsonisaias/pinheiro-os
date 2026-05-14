@@ -6,9 +6,11 @@
  * `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (PG 9.6+).
  */
 import { query } from './db.js';
+import { log }   from './logger.js';
+import { AUTH }  from './constants.js';
 
 export async function migrate() {
-  console.log("🗄️  [pinheiro] rodando migrações…");
+  log.info('[pinheiro] rodando migrações…');
 
   /* ── Agentes (técnicos + admins) ─────────────────────────────────────── */
   await query(`
@@ -186,6 +188,7 @@ export async function migrate() {
       criado_em    TIMESTAMPTZ DEFAULT NOW()
     )`);
   await query(`CREATE INDEX IF NOT EXISTS idx_audit_agente ON audit_log(agente_id, criado_em DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_audit_acao   ON audit_log(acao, criado_em DESC)`);
 
   /* ── Veículo do dia + estoque no carro ───────────────────────────────── */
   await query(`
@@ -211,25 +214,33 @@ export async function migrate() {
       UNIQUE (agente_id, codigo)
     )`);
 
-  console.log("✅ [pinheiro] migrações concluídas");
+  /* ── KV genérico (cursor de sync, configs runtime) ───────────────────── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS sistema_kv (
+      chave        TEXT PRIMARY KEY,
+      valor        JSONB,
+      atualizado   TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+  log.info('[pinheiro] migrações concluídas');
 }
 
 /**
  * Cria um admin inicial só se não houver NENHUM agente cadastrado.
- * Use a senha padrão para o primeiro login, depois TROCAR.
+ * Senha padrão para o primeiro login — TROCAR via PUT /api/agentes/me/senha.
  */
 export async function seedAdmin() {
   const r = await query(`SELECT COUNT(*)::int AS n FROM agentes`);
   if (r.rows[0].n > 0) return;
 
-  const bcrypt = (await import('bcryptjs')).default;
+  const bcrypt = await import('@node-rs/bcrypt');
   const senha = process.env.PINHEIRO_ADMIN_SENHA || 'admin123';
-  const hash  = await bcrypt.hash(senha, 10);
+  const hash  = await bcrypt.hash(senha, AUTH.bcrypt_rounds);
   await query(
     `INSERT INTO agentes(nome, login, senha_hash, role, ativo)
      VALUES ('Administrador Pinheiro', 'admin', $1, 'admin', true)`,
     [hash]
   );
-  console.log("🔑 [pinheiro] admin inicial criado — login='admin' senha='" + senha + "'");
-  console.log("   ⚠️  TROQUE a senha no primeiro login!");
+  log.info(`[pinheiro] admin inicial criado — login='admin' senha='${senha}'`);
+  log.warn('[pinheiro] ⚠️  TROQUE a senha no primeiro login!');
 }

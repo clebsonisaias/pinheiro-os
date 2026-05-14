@@ -19,6 +19,9 @@ FROM node:20-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 
+# @node-rs/bcrypt já vem com binários prebuilt pra alpine — não precisa
+# de python3/make/g++ como o bcrypt nativo.
+
 # Backend deps (somente production)
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
