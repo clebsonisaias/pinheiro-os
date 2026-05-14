@@ -26,6 +26,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app  = express();
 const PORT = process.env.PORT || 4000;
 
+// Estado de boot — exposto via /api/health pro Coolify e pro frontend
+// detectarem rapidamente que estamos em modo degradado.
+const bootState = { db: 'pending', dbError: null };
+app.locals.bootState = bootState;
+
 /* ── Trust proxy (necessário pro req.ip funcionar atrás do Coolify) ─────── */
 app.set('trust proxy', 1);
 
@@ -141,33 +146,45 @@ function validarEnvCriticas() {
 }
 
 /* ── Boot ─────────────────────────────────────────────────────────────── */
+// Sobe o listener PRIMEIRO e tenta o DB em background. Assim, mesmo que o
+// Postgres esteja inacessível (host errado, credenciais inválidas, rede caída),
+// o processo continua vivo, /api/health responde e o proxy reverso NÃO mostra
+// "no available server" pro usuário — exibe a página com o estado real.
+app.listen(PORT, () => {
+  log.info(`🌲 Pinheiro OS rodando em http://localhost:${PORT}`);
+});
+
 (async () => {
+  const envOk = validarEnvCriticas();
+  if (!envOk) {
+    bootState.db = 'degraded';
+    bootState.dbError = 'env_invalida';
+    log.warn('[pinheiro] subindo em modo DEGRADADO — env inválida. Só /api/health responde.');
+    return;
+  }
+
   try {
-    const envOk = validarEnvCriticas();
-    if (envOk) {
-      await ensureDatabase();
-      await migrate();
-      await seedAdmin();
-      log.info('[pinheiro] banco pronto');
-    } else {
-      log.warn('[pinheiro] subindo em modo DEGRADADO — sem DB. Só /api/health responde.');
-    }
-
-    // Sync só roda se DB estiver disponível
-    const envOkAgora = validarEnvCriticas();
-    if (envOkAgora && process.env.MAXXI_API_URL && process.env.MAXXI_API_KEY) {
-      iniciarSyncMaxxi({
-        intervaloMs: parseInt(process.env.MAXXI_SYNC_INTERVAL_MS || '30000'),
-      });
-    } else {
-      log.info('Sync Maxxi desativado (env ausente ou DB indisponível)');
-    }
-
-    app.listen(PORT, () => {
-      log.info(`🌲 Pinheiro OS rodando em http://localhost:${PORT}`);
-    });
+    await ensureDatabase();
+    await migrate();
+    await seedAdmin();
+    bootState.db = 'ok';
+    log.info('[pinheiro] banco pronto');
   } catch (e) {
-    log.error('Boot falhou:', e);
-    process.exit(1);
+    bootState.db = 'degraded';
+    bootState.dbError = e.message;
+    log.error('━'.repeat(64));
+    log.error('⛔ Falha ao preparar banco — subindo em modo DEGRADADO');
+    log.error('   ' + e.message);
+    log.error('   Verifique no Coolify: DATABASE_URL e se o Postgres está acessível.');
+    log.error('━'.repeat(64));
+    return;
+  }
+
+  if (process.env.MAXXI_API_URL && process.env.MAXXI_API_KEY) {
+    iniciarSyncMaxxi({
+      intervaloMs: parseInt(process.env.MAXXI_SYNC_INTERVAL_MS || '30000'),
+    });
+  } else {
+    log.info('Sync Maxxi desativado (MAXXI_API_URL/MAXXI_API_KEY ausentes)');
   }
 })();
