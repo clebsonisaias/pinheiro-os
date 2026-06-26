@@ -1,0 +1,41 @@
+{
+  "packageId": "br.com.citmax.equipe",
+  "host": "pinheiro.citmax.com.br",
+  "name": "CITmax Equipe",
+  "launcherName": "CITmax Equipe",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#16A34A",
+  "themeColorDark": "#0D1F0D",
+  "navigationColor": "#16A34A",
+  "navigationColorDark": "#0D1F0D",
+  "navigationDividerColor": "#16A34A",
+  "navigationDividerColorDark": "#0D1F0D",
+  "backgroundColor": "#F6FAF6",
+  "enableNotifications": true,
+  "startUrl": "/?source=twa",
+  "iconUrl": "https://pinheiro.citmax.com.br/icon-512.png",
+  "maskableIconUrl": "https://pinheiro.citmax.com.br/icon-512.png",
+  "monochromeIconUrl": "https://pinheiro.citmax.com.br/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "citmax-equipe"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://pinheiro.citmax.com.br/manifest-tecnico.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://pinheiro.citmax.com.br/",
+  "minSdkVersion": 23,
+  "orientationLock": false
+}

@@ -12,6 +12,7 @@ import { authMw }       from './auth.js';
 import { audit }        from '../services/audit.js';
 import { log }          from '../services/logger.js';
 import { OS_STATUS, PAGINATION } from '../services/constants.js';
+import { sendPushToAgente } from '../services/push.js';
 
 const router = Router();
 router.use(authMw);
@@ -259,6 +260,22 @@ router.put('/:id/atribuir', async (req, res) => {
 
     audit(req, 'os_atribuir', `os:${osId}`, { agente_id });
     res.json({ ok: true });
+
+    // Notifica o técnico (push) — fora do caminho da resposta, nunca derruba o request.
+    if (agente_id) {
+      query(`SELECT tipo, cliente_nome FROM os WHERE id = $1`, [osId])
+        .then(({ rows }) => {
+          const os = rows[0] || {};
+          const cliente = os.cliente_nome ? ` — ${os.cliente_nome}` : '';
+          return sendPushToAgente(+agente_id, {
+            title: 'Nova OS atribuída',
+            body:  `OS #${osId}${cliente}`,
+            url:   `/?os=${osId}`,
+            tag:   `os-${osId}`,
+          });
+        })
+        .catch(e => log.warn('[os/atribuir] push falhou:', e.message));
+    }
   } catch (e) {
     log.error('[os/atribuir]', e.message);
     res.status(500).json({ error: 'erro ao atribuir' });

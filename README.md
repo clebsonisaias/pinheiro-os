@@ -78,6 +78,18 @@ docker run -p 4000:4000 --env-file .env pinheiro-os
 3. Adicione subdomínio: `pinheiro.citmax.com.br`
 4. Deploy — o Dockerfile já faz tudo
 
+## App Android — CITmax Equipe
+
+O portal do técnico é um **PWA** empacotado como app Android (**TWA**, sem código
+nativo) e publicado na Play Store com o nome **CITmax Equipe**.
+
+- Identidade do app (nome, ícones PNG, manifest) em `portal-tecnico/public/`
+- Service worker (offline + push) em `portal-tecnico/public/sw-pinheiro.js`
+- Digital Asset Links em `portal-tecnico/public/.well-known/assetlinks.json`
+- Empacotamento Android (Bubblewrap) e passo-a-passo de publicação em [`twa/README.md`](twa/README.md)
+
+Checklist de release em [`twa/CHECKLIST.md`](twa/CHECKLIST.md).
+
 ## Integração com Maxxi
 
 O Pinheiro consome **somente** a API pública do Maxxi (`/api/v1/*`):
