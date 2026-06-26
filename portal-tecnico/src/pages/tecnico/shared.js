@@ -193,7 +193,7 @@ export async function registrarPWA(user) {
   try {
     const regs = await navigator.serviceWorker.getRegistrations().catch(() => []);
     for (const reg of regs) {
-      if (reg.active?.scriptURL?.includes('sw-tecnico')) continue;
+      if (reg.active?.scriptURL?.includes('sw-pinheiro')) continue;
       await reg.unregister().catch(() => {});
     }
     const reg = await navigator.serviceWorker.register('/sw-pinheiro.js', { scope: '/' });

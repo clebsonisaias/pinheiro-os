@@ -6,6 +6,7 @@
  *   /api/agentes/{login,logout,me,me/senha,config,posicao}
  *   /api/os/{minhas,fila,:id,...}
  *   /api/ia/{transcribe,diagnostico/:id,duplicadas/:id,...}
+ *   /api/push/{vapid-key,subscribe}
  *   /api/health
  */
 import { Router } from 'express';
@@ -16,6 +17,7 @@ import authRouter   from './auth.js';
 import agenteRouter from './agente.js';
 import osRouter     from './os.js';
 import iaRouter     from './ia.js';
+import pushRouter   from './push.js';
 
 const router = Router();
 
@@ -46,5 +48,6 @@ router.use('/api/agentes', agenteRouter);
 
 router.use('/api/os', osRouter);
 router.use('/api/ia', iaRouter);
+router.use('/api/push', pushRouter);
 
 export default router;

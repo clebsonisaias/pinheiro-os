@@ -35,3 +35,15 @@ Thumbs.db
 *.bak
 coverage/
 .nyc_output/
+
+# Android / TWA (Bubblewrap) — NUNCA comitar keystore nem artefatos de build
+*.keystore
+*.jks
+twa/app/
+twa/.gradle/
+twa/build/
+twa/*.aab
+twa/*.apk
+twa/*.idsig
+twa/store_icon.png
+twa/android.keystore
