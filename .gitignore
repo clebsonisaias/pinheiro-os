@@ -31,6 +31,9 @@ Thumbs.db
 .claude/
 .cursor/
 
+# Uploads (mídia do chat — volume persistente, não versionar)
+uploads/
+
 # Misc
 *.bak
 coverage/

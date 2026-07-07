@@ -116,11 +116,42 @@ GET    /api/ia/duplicadas/:os_id
 POST   /api/ia/duplicadas/dispensar
 POST   /api/ia/agentes/posicao     GPS heartbeat
 
+# Chat interno (comunicação oficial entre funcionários)
+GET    /api/chat/conversas         minhas conversas (DM/grupo/canal) + unread
+GET    /api/chat/agentes           agentes ativos p/ iniciar DM/grupo (+ presença)
+POST   /api/chat/dm                get-or-create conversa 1:1
+POST   /api/chat/conversas         criar grupo ou canal de avisos (canal = admin)
+GET    /api/chat/conversas/:id     detalhe + participantes
+GET    /api/chat/conversas/:id/mensagens   ?before=&limit=  (cursor)
+POST   /api/chat/conversas/:id/mensagens   enviar texto
+POST   /api/chat/conversas/:id/anexos      enviar foto/áudio/vídeo (multipart)
+POST   /api/chat/conversas/:id/ler         marca lido até uma mensagem
+GET    /api/chat/conversas/:id/mensagens/:msgId/recibos   "quem leu" (avisos)
+GET    /api/chat/media/:id         download/stream com Range (URL assinada)
+GET    /api/chat/stats             KPI "Conversas 7d"
+PUT    /api/chat/perfil/assinatura assinatura nas mensagens
+
+POST   /api/sse-ticket             ticket p/ SSE (autenticado)
+GET    /admin/chat/stream          stream SSE em tempo real (via ticket)
+
+GET    /api/push/vapid-key         chave pública VAPID
+POST   /api/push/subscribe         registra inscrição push do agente
+
 GET    /api/health
 ```
+
+### Chat interno em tempo real
+
+- **DM, grupos e canal de avisos** (só admin posta, com confirmação de "quem leu").
+- Mensagens de **texto, foto (com geotag), áudio e vídeo**.
+- **Tempo real via SSE** + **push** para quem está offline; **presença** online/last-seen.
+- **Mídia em volume no servidor** (`UPLOAD_DIR`), servida com suporte a `Range`
+  (áudio/vídeo). ⚠️ No deploy, monte `UPLOAD_DIR` como **volume persistente** e
+  defina `APP_SECRET` (assina as URLs de mídia) e as chaves `VAPID_*`.
 
 ## Banco
 
 - Database: `pinheiro_os` (criado automaticamente se o user PG tiver `CREATEDB`)
-- 14 tabelas: agentes, sessões, OS, eventos, fotos, checklist, observações, posições, push, IA caches, audit log, veículos, estoque
+- Tabelas de OS/agentes: agentes, sessões, OS, eventos, fotos, checklist, observações, posições, push, IA caches, audit log, veículos, estoque
+- Tabelas do chat: `chat_conversas`, `chat_participantes`, `chat_mensagens`, `chat_anexos`, `chat_recibos`, `chat_reacoes`
 - Todas migrações são `CREATE IF NOT EXISTS` — seguro rodar em todo boot

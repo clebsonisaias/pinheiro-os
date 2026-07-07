@@ -222,6 +222,119 @@ export async function migrate() {
       atualizado   TIMESTAMPTZ DEFAULT NOW()
     )`);
 
+  /* ══ CHAT INTERNO ═══════════════════════════════════════════════════════
+   * Comunicação oficial entre funcionários. Uma única estrutura cobre
+   * DM (1:1), grupos e o canal de avisos (só admin posta, todos leem).
+   */
+
+  /* ── Conversas (dm | grupo | canal) ──────────────────────────────────── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_conversas (
+      id                  BIGSERIAL PRIMARY KEY,
+      tipo                TEXT NOT NULL CHECK (tipo IN ('dm','grupo','canal')),
+      titulo              TEXT,            -- grupo/canal; DM deriva do outro participante
+      descricao           TEXT,
+      avatar_url          TEXT,
+      somente_admin_posta BOOLEAN NOT NULL DEFAULT false,  -- true no canal de avisos
+      dm_key              TEXT UNIQUE,     -- 'menorId:maiorId' — dedupe de DM; NULL p/ grupo/canal
+      criado_por          INTEGER REFERENCES agentes(id) ON DELETE SET NULL,
+      ultima_mensagem_em  TIMESTAMPTZ,     -- denormalizado p/ ordenar a lista
+      criado_em           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_conv_tipo  ON chat_conversas(tipo)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_conv_ordem ON chat_conversas(ultima_mensagem_em DESC NULLS LAST)`);
+
+  /* ── Participantes (membership + estado de leitura por participante) ──── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_participantes (
+      id                 BIGSERIAL PRIMARY KEY,
+      conversa_id        BIGINT NOT NULL REFERENCES chat_conversas(id) ON DELETE CASCADE,
+      agente_id          INTEGER NOT NULL REFERENCES agentes(id) ON DELETE CASCADE,
+      papel              TEXT NOT NULL DEFAULT 'membro' CHECK (papel IN ('membro','admin')),
+      ultima_msg_lida_id BIGINT NOT NULL DEFAULT 0,   -- base barata de unread + ✓✓
+      ultima_leitura_em  TIMESTAMPTZ,
+      notif_mudo         BOOLEAN NOT NULL DEFAULT false,
+      entrou_em          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      saiu_em            TIMESTAMPTZ,                  -- soft-leave (mantém histórico)
+      UNIQUE (conversa_id, agente_id)
+    )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_part_agente ON chat_participantes(agente_id) WHERE saiu_em IS NULL`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_part_conv   ON chat_participantes(conversa_id)`);
+
+  /* ── Mensagens ───────────────────────────────────────────────────────── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_mensagens (
+      id           BIGSERIAL PRIMARY KEY,
+      conversa_id  BIGINT NOT NULL REFERENCES chat_conversas(id) ON DELETE CASCADE,
+      autor_id     INTEGER REFERENCES agentes(id) ON DELETE SET NULL,
+      tipo         TEXT NOT NULL DEFAULT 'texto'
+                   CHECK (tipo IN ('texto','foto','audio','video','arquivo','os_ref','sistema')),
+      texto        TEXT,
+      responde_a   BIGINT REFERENCES chat_mensagens(id) ON DELETE SET NULL,  -- reply/citar (fase 2)
+      os_id        INTEGER REFERENCES os(id) ON DELETE SET NULL,             -- compartilhar OS (fase 2)
+      editado_em   TIMESTAMPTZ,
+      deletado_em  TIMESTAMPTZ,                                              -- soft delete
+      criado_em    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_msg_conv ON chat_mensagens(conversa_id, id DESC)`);
+
+  /* ── Anexos (1:N — foto/áudio/vídeo/arquivo no volume) ───────────────── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_anexos (
+      id           BIGSERIAL PRIMARY KEY,
+      mensagem_id  BIGINT NOT NULL REFERENCES chat_mensagens(id) ON DELETE CASCADE,
+      tipo         TEXT NOT NULL CHECK (tipo IN ('foto','audio','video','arquivo')),
+      path         TEXT NOT NULL,          -- caminho relativo no volume (nunca exposto cru)
+      nome_original TEXT,
+      mime         TEXT,
+      tamanho_b    BIGINT,
+      largura      INTEGER,
+      altura       INTEGER,
+      duracao_s    REAL,                   -- áudio/vídeo
+      thumb_path   TEXT,
+      hash         TEXT,
+      lat          DOUBLE PRECISION,       -- foto geotag (FotoGeoTag)
+      lng          DOUBLE PRECISION,
+      criado_em    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_anexo_msg ON chat_anexos(mensagem_id)`);
+
+  /* ── Recibos de leitura POR mensagem (canal de avisos: "quem leu") ───── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_recibos (
+      mensagem_id  BIGINT NOT NULL REFERENCES chat_mensagens(id) ON DELETE CASCADE,
+      agente_id    INTEGER NOT NULL REFERENCES agentes(id) ON DELETE CASCADE,
+      estado       TEXT NOT NULL DEFAULT 'lido' CHECK (estado IN ('entregue','lido')),
+      entregue_em  TIMESTAMPTZ,
+      lido_em      TIMESTAMPTZ,
+      PRIMARY KEY (mensagem_id, agente_id)
+    )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_chat_recibo_msg ON chat_recibos(mensagem_id)`);
+
+  /* ── Reações emoji (FASE 2) ──────────────────────────────────────────── */
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_reacoes (
+      mensagem_id  BIGINT NOT NULL REFERENCES chat_mensagens(id) ON DELETE CASCADE,
+      agente_id    INTEGER NOT NULL REFERENCES agentes(id) ON DELETE CASCADE,
+      emoji        TEXT NOT NULL,
+      criado_em    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (mensagem_id, agente_id, emoji)
+    )`);
+
+  /* ── ALTERs: presença + assinatura de chat no agente ─────────────────── */
+  await query(`ALTER TABLE agentes ADD COLUMN IF NOT EXISTS ultimo_visto    TIMESTAMPTZ`);
+  await query(`ALTER TABLE agentes ADD COLUMN IF NOT EXISTS assinatura_chat TEXT`);
+
+  /* ── Busca full-text tolerante a PT-BR (FASE 2) ──────────────────────── */
+  try {
+    await query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_chat_msg_busca
+                 ON chat_mensagens USING gin (texto gin_trgm_ops)`);
+  } catch (e) {
+    log.warn('[pinheiro] pg_trgm indisponível — busca de chat usará ILIKE:', e.message);
+  }
+
   log.info('[pinheiro] migrações concluídas');
 }
 

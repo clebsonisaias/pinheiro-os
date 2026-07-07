@@ -16,8 +16,7 @@ import { OSScreen }     from './tecnico/OSScreen';
 import { EstoqueScreen } from './tecnico/EstoqueScreen';
 import { InstalacoesScreen } from './tecnico/InstalacoesScreen';
 import { OCScreen }     from './tecnico/OCScreen';
-// Chat interno — a implementar na fase 2 do OndaOS
-// import Chat from './Chat';
+import Chat             from './tecnico/chat/Chat';
 import { DetalheOS }    from './tecnico/DetalheOS';
 import { DetalheOC }    from './tecnico/DetalheOC';
 import { FttxScreen }   from './tecnico/FttxScreen';
@@ -26,6 +25,28 @@ import { VeiculoModal, VeiculoSheet } from './tecnico/VeiculoModal';
 import { AbastecimentoScreen } from './tecnico/AbastecimentoScreen';
 import { startAutoDrain, drain as drainQueue, onQueueChange, countPending } from './tecnico/offlineQueue';
 import { useTecnicoRealtime, tocarDingDong, vibrar, piscarTitle } from './tecnico/useTecnicoRealtime';
+
+// Tickets ainda não implementados no OndaOS (sem backend/componente próprios).
+// Stubs abaixo evitam o crash de referência não-definida herdado do Maxxi.
+// Substituir por telas reais quando o módulo de tickets for construído.
+function TicketsScreen() {
+  return (
+    <div style={{ margin:'auto', textAlign:'center', color:T.muted, padding:32 }}>
+      <div style={{ fontSize:'2rem', marginBottom:8 }}>🎫</div>
+      <div style={{ fontWeight:700, color:T.text }}>Tickets em breve</div>
+      <div style={{ fontSize:'.85rem', marginTop:6 }}>Módulo em desenvolvimento.</div>
+    </div>
+  );
+}
+function DetalheTicket({ onBack }) {
+  return (
+    <div style={{ margin:'auto', textAlign:'center', color:T.muted, padding:32 }}>
+      <div style={{ fontSize:'2rem', marginBottom:8 }}>🎫</div>
+      <div style={{ fontWeight:700, color:T.text }}>Ticket</div>
+      <button type="button" onClick={onBack} style={{ marginTop:12, padding:'8px 16px', borderRadius:10, border:`1px solid ${T.bord}`, background:T.card, color:T.text, cursor:'pointer' }}>Voltar</button>
+    </div>
+  );
+}
 
 // ── PWA Install Prompt ───────────────────────────────────────────────────────
 const INSTALL_KEY = 'pwa_install_dismissed_at';
@@ -582,6 +603,18 @@ function TecnicoShell({ logout }) {
   const [verHistorico, setVerHistorico] = useState(false);
   const [verPerfil, setVerPerfil] = useState(false);
   const [chatConvId, setChatConvId] = useState(null);
+  const [chatNavPulse, setChatNavPulse] = useState(0); // tocar "Chat" na nav volta à lista
+
+  // Deep-link do push: /?conv=<id> abre direto a conversa no chat.
+  useEffect(() => {
+    const conv = new URLSearchParams(window.location.search).get('conv');
+    if (conv) {
+      setChatConvId(conv);
+      setTela('chat');
+      // limpa a query pra não reabrir em navegações internas
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const [veiculoSelecionado, setVeiculoSelecionado] = useState(() => {
     try {
@@ -675,7 +708,7 @@ function TecnicoShell({ logout }) {
               {tela==='os'      && <OSScreen   onOpenOS={abrirOS} />}
               {tela==='instalacoes' && <InstalacoesScreen onOpenOS={abrirOS} />}
               {tela==='oc'      && <OCScreen   onOpenOC={abrirOC} />}
-              {tela==='chat'    && <Chat tecnicoMode={true} initialConvId={chatConvId} />}
+              {tela==='chat'    && <Chat tecnicoMode={true} initialConvId={chatConvId} resetSignal={chatNavPulse} />}
               {tela==='estoque'     && <EstoqueScreen />}
               {tela==='fttx'        && <FttxScreen />}
               {tela==='combustivel' && <AbastecimentoScreen veiculoSelecionado={veiculoSelecionado} initialTab={abastecimentoInitialTab} />}
@@ -691,7 +724,7 @@ function TecnicoShell({ logout }) {
                           : n.id === 'instalacoes' && instalacoesPendentes > 0 ? (instalacoesPendentes > 9 ? '9+' : String(instalacoesPendentes))
                           : null;
               return (
-                <button type="button" key={n.id} onClick={()=>{ setTela(n.id); if (n.id !== 'chat') setChatConvId(null); }} aria-label={n.label} aria-current={active?'page':undefined}
+                <button type="button" key={n.id} onClick={()=>{ setTela(n.id); if (n.id === 'chat') setChatNavPulse(p=>p+1); else setChatConvId(null); }} aria-label={n.label} aria-current={active?'page':undefined}
                   style={{ flex:1, padding:'10px 6px 8px', border:'none', background: active ? 'rgba(0,200,150,.06)' : 'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:3, borderTop:`2px solid ${active?T.green:'transparent'}`, transition:'border-color .15s, background .15s', minHeight:56, touchAction:'manipulation', position:'relative' }}>
                   <span style={{ position:'relative', color: active ? T.green : T.muted, display:'flex', transition:'color .15s' }}>
                     <n.Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
