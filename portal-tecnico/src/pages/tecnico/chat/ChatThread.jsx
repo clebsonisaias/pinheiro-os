@@ -22,6 +22,7 @@ export function ChatThread({
 }) {
   const scrollRef = useRef(null);
   const fimRef    = useRef(null);
+  const pertoFim  = useRef(true);   // usuário está perto do fim do thread?
   const [recibos, setRecibos] = useState(null); // { msg, lidos, pendentes } | null
   const ehCanal = conversa?.tipo === 'canal';
   const ehGrupo = conversa?.tipo === 'grupo';
@@ -32,15 +33,21 @@ export function ChatThread({
     fimRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
   }, []);
 
-  // Rola pro fim quando muda a última mensagem
+  // Rola pro fim e marca lido só quando o usuário já está no fim (não interrompe
+  // quem está lendo o histórico rolado pra cima) e a aba está visível.
   const ultimaId = mensagens.length ? mensagens[mensagens.length - 1].id : null;
+  const minhaUltima = mensagens.length ? mensagens[mensagens.length - 1].autor_id === meuId : false;
   useEffect(() => {
-    scrollToBottom();
-    if (ultimaId) onMarcarLido?.(ultimaId);
-  }, [ultimaId, scrollToBottom, onMarcarLido]);
+    if (pertoFim.current || minhaUltima) {
+      scrollToBottom();
+      if (ultimaId && document.visibilityState !== 'hidden') onMarcarLido?.(ultimaId);
+    }
+  }, [ultimaId, minhaUltima, scrollToBottom, onMarcarLido]);
 
   const onScroll = (e) => {
-    if (e.target.scrollTop < 40 && temMais && !carregando) onCarregarMais?.();
+    const el = e.target;
+    pertoFim.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (el.scrollTop < 40 && temMais && !carregando) onCarregarMais?.();
   };
 
   const verRecibos = async (msg) => {

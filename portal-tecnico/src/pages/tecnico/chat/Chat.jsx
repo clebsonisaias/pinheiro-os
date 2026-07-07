@@ -25,8 +25,8 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
   const [temMais, setTemMais]     = useState(false);
   const [carregando, setCarregando] = useState(false);
 
-  const convAbertaRef = useRef(null);
-  useEffect(() => { convAbertaRef.current = conversa?.id ?? null; }, [conversa]);
+  const convAbertaRef = useRef(null);       // id da conversa aberta (síncrono)
+  const aberturaSeq    = useRef(0);          // versão da abertura (anti-race)
 
   /* ── Carregamentos ─────────────────────────────────────────────────────── */
   const carregarConversas = useCallback(async () => {
@@ -35,6 +35,8 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
   }, []);
 
   const abrirConversa = useCallback(async (conv) => {
+    const seq = ++aberturaSeq.current;
+    convAbertaRef.current = conv.id;          // síncrono: SSE já roteia certo
     setView('thread');
     setCarregando(true);
     setMensagens([]); setMinLida(0); setTemMais(false);
@@ -43,12 +45,15 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
         detalheConversa(conv.id),
         listarMensagens(conv.id, { limit: 40 }),
       ]);
+      if (seq !== aberturaSeq.current) return; // outra conversa foi aberta no meio-tempo
       setConversa(det);
       setMensagens(msgs.items || []);
       setMinLida(Number(msgs.min_lida_outros || 0));
       setTemMais(!!msgs.tem_mais);
-    } catch (e) { showToast?.('Erro ao abrir conversa: ' + e.message); setView('lista'); }
-    finally { setCarregando(false); }
+    } catch (e) {
+      if (seq === aberturaSeq.current) { showToast?.('Erro ao abrir conversa: ' + e.message); setView('lista'); }
+    }
+    finally { if (seq === aberturaSeq.current) setCarregando(false); }
   }, [showToast]);
 
   const carregarMais = useCallback(async () => {
@@ -68,9 +73,20 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
     setConversas(prev => prev.map(c => c.id === conversa.id ? { ...c, unread: 0 } : c));
   }, [conversa]);
 
+  // Só anexa se a mensagem pertence à conversa aberta (evita cair no thread errado
+  // quando o usuário troca de conversa antes do POST/SSE resolver). Deduplica por id.
   const appendMsg = useCallback((msg) => {
+    if (!msg || String(msg.conversa_id) !== String(convAbertaRef.current)) return;
     setMensagens(prev => prev.some(m => String(m.id) === String(msg.id)) ? prev : [...prev, msg]);
   }, []);
+
+  const aoPoll = useCallback(() => {
+    carregarConversas();
+    const cid = convAbertaRef.current;
+    if (cid) detalheConversa(cid).then(d => {
+      if (String(convAbertaRef.current) === String(cid)) setConversa(d);
+    }).catch(() => {});
+  }, [carregarConversas]);
 
   /* ── Boot + conversa inicial ───────────────────────────────────────────── */
   useEffect(() => { carregarConversas(); }, [carregarConversas]);
@@ -79,6 +95,7 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
   const primeiroReset = useRef(true);
   useEffect(() => {
     if (primeiroReset.current) { primeiroReset.current = false; return; }
+    aberturaSeq.current++; convAbertaRef.current = null;
     setView('lista'); setConversa(null); setMensagens([]); carregarConversas();
   }, [resetSignal]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -104,18 +121,22 @@ export default function Chat({ initialConvId = null, resetSignal = 0 }) {
         setMinLida(prev => Math.max(prev, Number(data.ate_msg_id || 0)));
       }
     },
-    onPoll: () => {
-      carregarConversas();
-      // atualiza presença/detalhe da conversa aberta
-      if (convAbertaRef.current) detalheConversa(convAbertaRef.current).then(setConversa).catch(() => {});
-    },
+    onPoll: aoPoll,
   });
 
-  const voltar = () => { setView('lista'); setConversa(null); setMensagens([]); carregarConversas(); };
+  const voltar = () => {
+    aberturaSeq.current++;          // invalida respostas pendentes de abertura
+    convAbertaRef.current = null;
+    setView('lista'); setConversa(null); setMensagens([]); carregarConversas();
+  };
 
   /* ── Render ────────────────────────────────────────────────────────────── */
+  // maxWidth + alignSelf centram o chat na página web (desktop); no celular
+  // (app) fica full-width. borda lateral sutil separa do fundo em telas largas.
   return (
-    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: T.bg }}>
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
+      background: T.bg, width: '100%', maxWidth: 960, alignSelf: 'center',
+      borderLeft: `1px solid ${T.bg2}`, borderRight: `1px solid ${T.bg2}` }}>
       {view === 'lista' && (
         <ConversasList
           conversas={conversas} meuId={meuId} ehAdmin={ehAdmin}

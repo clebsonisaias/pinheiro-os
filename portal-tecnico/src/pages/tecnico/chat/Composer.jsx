@@ -43,7 +43,10 @@ export function Composer({ convId, podePostar = true, onEnviado, showToast }) {
     try {
       const msg = await enviarTexto(convId, t);
       if (!msg?.queued) onEnviado?.(msg);
-    } catch (e) { showToast?.('Falha ao enviar: ' + e.message); setTexto(t); }
+    } catch (e) {
+      showToast?.('Falha ao enviar: ' + e.message);
+      setTexto(prev => prev ? prev : t); // só restaura se o campo continua vazio
+    }
   };
 
   const enviarArquivo = async (file, tipo, meta = {}) => {

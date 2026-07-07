@@ -14,13 +14,13 @@
  */
 import { Router }  from 'express';
 import crypto      from 'node:crypto';
-import { statSync, createReadStream } from 'node:fs';
+import { statSync, createReadStream, unlink } from 'node:fs';
 import { query, withTx } from '../services/db.js';
 import { authMw }  from './auth.js';
 import { audit }   from '../services/audit.js';
 import { log }     from '../services/logger.js';
 import { PAGINATION } from '../services/constants.js';
-import { uploadAnexo, toRelativo, toAbsoluto, LIMITES } from '../services/storage.js';
+import { uploadAnexo, toRelativo, toAbsoluto, LIMITES, mimeCompativel } from '../services/storage.js';
 import { emitToAgentes, isOnline } from '../services/realtime.js';
 import { sendPush } from '../services/push.js';
 
@@ -350,6 +350,7 @@ router.get('/conversas/:id', async (req, res) => {
   try {
     const me = req.agente.agente_id;
     const id = +req.params.id;
+    if (!id) return res.status(400).json({ error: 'id inválido' });
     const part = await getParticipacao(id, me);
     if (!part) return res.status(403).json({ error: 'você não participa desta conversa' });
 
@@ -376,6 +377,7 @@ router.get('/conversas/:id/mensagens', async (req, res) => {
   try {
     const me = req.agente.agente_id;
     const id = +req.params.id;
+    if (!id) return res.status(400).json({ error: 'id inválido' });
     const part = await getParticipacao(id, me);
     if (!part) return res.status(403).json({ error: 'você não participa desta conversa' });
 
@@ -428,6 +430,7 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
   try {
     const me = req.agente.agente_id;
     const id = +req.params.id;
+    if (!id) return res.status(400).json({ error: 'id inválido' });
     const { texto, responde_a, os_id } = req.body || {};
     if (!texto?.trim()) return res.status(400).json({ error: 'texto vazio' });
     if (texto.length > 8000) return res.status(400).json({ error: 'texto muito longo' });
@@ -465,26 +468,35 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
 /* ── POST /conversas/:id/anexos — enviar mídia (foto/áudio; vídeo FASE 2) ── */
 router.post('/conversas/:id/anexos', (req, res) => {
   uploadAnexo(req, res, async (err) => {
+    // Remove o arquivo já gravado pelo multer quando a requisição é rejeitada
+    // (o diskStorage grava ANTES do handler rodar as validações/autorização).
+    const limpar = () => { if (req.file?.path) unlink(req.file.path, () => {}); };
+    const rejeitar = (status, error) => { limpar(); return res.status(status).json({ error }); };
     try {
-      if (err) return res.status(400).json({ error: err.message });
+      if (err) return rejeitar(400, err.message);
       if (!req.file) return res.status(400).json({ error: 'arquivo ausente' });
 
       const me = req.agente.agente_id;
       const id = +req.params.id;
       const tipo = String(req.body?.tipo || 'arquivo');
+      if (!id) return rejeitar(400, 'id inválido');
       if (!['foto', 'audio', 'video', 'arquivo'].includes(tipo)) {
-        return res.status(400).json({ error: 'tipo inválido' });
+        return rejeitar(400, 'tipo inválido');
+      }
+      // MIME validado aqui (não no fileFilter) pois req.body.tipo já está parseado.
+      if (!mimeCompativel(tipo, req.file.mimetype)) {
+        return rejeitar(400, `arquivo '${req.file.mimetype}' incompatível com tipo '${tipo}'`);
       }
       // Refino de limite por tipo (o teto geral do multer é o de vídeo)
       if (LIMITES[tipo] && req.file.size > LIMITES[tipo]) {
-        return res.status(400).json({ error: `arquivo excede o limite de ${Math.round(LIMITES[tipo] / 1048576)}MB` });
+        return rejeitar(400, `arquivo excede o limite de ${Math.round(LIMITES[tipo] / 1048576)}MB`);
       }
 
       const part = await getParticipacao(id, me);
-      if (!part) return res.status(403).json({ error: 'você não participa desta conversa' });
+      if (!part) return rejeitar(403, 'você não participa desta conversa');
       const conversa = await getConversa(id);
       if (conversa.somente_admin_posta && req.agente.role !== 'admin') {
-        return res.status(403).json({ error: 'apenas admin pode postar neste canal' });
+        return rejeitar(403, 'apenas admin pode postar neste canal');
       }
 
       const rel = toRelativo(req.file.path);
@@ -516,6 +528,7 @@ router.post('/conversas/:id/anexos', (req, res) => {
       audit(req, 'chat_anexo', `conversa:${id}`, { tipo, bytes: req.file.size });
       res.status(201).json(msg);
     } catch (e) {
+      limpar();
       log.error('[chat/anexo]', e.message);
       res.status(500).json({ error: 'erro ao enviar anexo' });
     }
@@ -528,6 +541,7 @@ router.post('/conversas/:id/ler', async (req, res) => {
     const me = req.agente.agente_id;
     const id = +req.params.id;
     const ate = +req.body?.ate_msg_id;
+    if (!id) return res.status(400).json({ error: 'id inválido' });
     if (!ate) return res.status(400).json({ error: 'ate_msg_id obrigatório' });
 
     const part = await getParticipacao(id, me);
@@ -568,6 +582,7 @@ router.get('/conversas/:id/mensagens/:msgId/recibos', async (req, res) => {
     const me = req.agente.agente_id;
     const id = +req.params.id;
     const msgId = +req.params.msgId;
+    if (!id || !msgId) return res.status(400).json({ error: 'id inválido' });
 
     const part = await getParticipacao(id, me);
     if (!part) return res.status(403).json({ error: 'sem acesso' });
@@ -603,6 +618,7 @@ router.put('/conversas/:id/mudo', async (req, res) => {
   try {
     const me = req.agente.agente_id;
     const id = +req.params.id;
+    if (!id) return res.status(400).json({ error: 'id inválido' });
     const mudo = !!req.body?.mudo;
     const { rowCount } = await query(
       `UPDATE chat_participantes SET notif_mudo = $1

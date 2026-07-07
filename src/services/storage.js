@@ -77,18 +77,24 @@ const storage = multer.diskStorage({
   },
 });
 
-/** Middleware multer para 1 anexo no campo 'file'. Valida mime pelo campo 'tipo'. */
+/**
+ * Confere se o MIME é compatível com o tipo lógico.
+ * 'arquivo' aceita qualquer coisa; foto/audio/video exigem o prefixo correto.
+ * NÃO usar isso no fileFilter do multer: em multipart, o campo 'tipo' pode ainda
+ * não ter sido parseado quando a parte do arquivo chega. Validar no handler,
+ * depois que req.body está populado.
+ */
+export function mimeCompativel(tipo, mime) {
+  const re = MIMES[tipo];
+  if (!re) return tipo === 'arquivo';
+  return re.test(mime || '');
+}
+
+/** Middleware multer para 1 anexo no campo 'file'. Teto de tamanho = vídeo;
+ *  validação de MIME e refino de limite por tipo são feitos no handler. */
 export const uploadAnexo = multer({
   storage,
-  limits: { fileSize: LIMITES.video, files: 1 },  // teto geral; refino por tipo abaixo
-  fileFilter(req, file, cb) {
-    const tipo = String(req.body?.tipo || 'arquivo');
-    const re = MIMES[tipo];
-    if (re && !re.test(file.mimetype || '')) {
-      return cb(new Error(`mime '${file.mimetype}' incompatível com tipo '${tipo}'`));
-    }
-    cb(null, true);
-  },
+  limits: { fileSize: LIMITES.video, files: 1 },
 }).single('file');
 
 export { existsSync };

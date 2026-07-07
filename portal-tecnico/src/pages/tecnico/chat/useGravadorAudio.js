@@ -16,6 +16,8 @@ export function useGravadorAudio({ maxSegundos = 300, onPronto } = {}) {
 
   useEffect(() => () => {
     if (tmrRef.current) clearInterval(tmrRef.current);
+    // Ao desmontar durante a gravação: cancela (não dispara onstop/envio).
+    if (mediaRef.current) mediaRef.current.onstop = null;
     if (mediaRef.current?.state === 'recording') { try { mediaRef.current.stop(); } catch {} }
     streamRef.current?.getTracks().forEach(t => t.stop());
   }, []);

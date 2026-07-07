@@ -13,6 +13,12 @@
  *
  * Presença: um agente está "online" enquanto tiver ≥1 conexão SSE ativa.
  * `agentes.ultimo_visto` é atualizado no connect e no disconnect.
+ *
+ * ATENÇÃO — estado em memória por processo: `clients` e os tickets vivem só
+ * neste processo. O deploy do Pinheiro é single-container (uma instância), o
+ * que é suficiente. Se um dia escalar para múltiplas instâncias, será preciso
+ * um barramento compartilhado (ex.: Redis pub/sub) para SSE e presença, e um
+ * `APP_SECRET` fixo compartilhado (já exigido) para as URLs de mídia assinadas.
  */
 import crypto from 'node:crypto';
 import { query } from './db.js';
