@@ -12,10 +12,13 @@ import { Router } from 'express';
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import authRouter   from './auth.js';
-import agenteRouter from './agente.js';
-import osRouter     from './os.js';
-import iaRouter     from './ia.js';
+import authRouter     from './auth.js';
+import agenteRouter   from './agente.js';
+import osRouter       from './os.js';
+import iaRouter       from './ia.js';
+import chatRouter     from './chat.js';
+import pushRouter     from './push.js';
+import realtimeRouter from './realtime.js';
 
 const router = Router();
 
@@ -40,11 +43,18 @@ router.get('/api/health', (req, res) => {
   });
 });
 
+// Tempo real do chat: /api/sse-ticket + /admin/chat/stream.
+// Montado na RAIZ e ANTES do express.static/catch-all (em server.js), senão
+// /admin/chat/stream (que não começa com /api) seria engolido pelo SPA.
+router.use(realtimeRouter);
+
 // /api/agentes — auth + config + posicao (dois routers compõem no mesmo prefix)
 router.use('/api/agentes', authRouter);
 router.use('/api/agentes', agenteRouter);
 
 router.use('/api/os', osRouter);
 router.use('/api/ia', iaRouter);
+router.use('/api/chat', chatRouter);
+router.use('/api/push', pushRouter);
 
 export default router;

@@ -20,6 +20,8 @@ import routerApi from './src/routes/index.js';
 import { ensureDatabase }      from './src/services/db.js';
 import { migrate, seedAdmin }  from './src/services/db-migrate.js';
 import { iniciarSyncMaxxi }    from './src/services/sync-maxxi.js';
+import { iniciarHeartbeat }    from './src/services/realtime.js';
+import { garantirUploadDir }   from './src/services/storage.js';
 import { log }                 from './src/services/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +50,7 @@ app.use(helmet({
       'style-src':   ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       'font-src':    ["'self'", 'https://fonts.gstatic.com', 'data:'],
       'img-src':     ["'self'", 'data:', 'blob:', 'https:'],
+      'media-src':   ["'self'", 'blob:'],   // áudio/vídeo do chat (stream + preview de gravação)
       'connect-src': ["'self'", 'https://api.tomtom.com', 'https://*.tomtom.com'],
       'worker-src':  ["'self'", 'blob:'],
       'manifest-src':["'self'"],
@@ -153,6 +156,10 @@ function validarEnvCriticas() {
 app.listen(PORT, () => {
   log.info(`🌲 Pinheiro OS rodando em http://localhost:${PORT}`);
 });
+
+// Chat interno: prepara o volume de mídia e o heartbeat SSE (não dependem do DB).
+garantirUploadDir();
+iniciarHeartbeat();
 
 (async () => {
   const envOk = validarEnvCriticas();
