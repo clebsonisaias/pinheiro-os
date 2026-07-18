@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CITmóvel">
+  <defs>
+    <linearGradient id="cmHex" x1="10" y1="4" x2="54" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B94A8"/>
+      <stop offset=".55" stop-color="#157A8C"/>
+      <stop offset="1" stop-color="#0E4C5A"/>
+    </linearGradient>
+  </defs>
+  <!-- hexágono -->
+  <path d="M32 3 57.1 17.5V46.5L32 61 6.9 46.5V17.5Z"
+        fill="url(#cmHex)" stroke="#0A3A45" stroke-width="1" stroke-linejoin="round"/>
+  <!-- circuito em "C" (conectividade / 5G) -->
+  <path d="M43 21.5C37.5 18 26 18.5 24 27.5C22 36.5 32.5 40 38.5 39"
+        fill="none" stroke="#EAFBFD" stroke-width="4.4" stroke-linecap="round"/>
+  <path d="M43 21.5H51M38.5 39H49" fill="none" stroke="#3CE0E8" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="51" cy="21.5" r="3" fill="#3CE0E8"/>
+  <circle cx="49" cy="39" r="3" fill="#3CE0E8"/>
+  <circle cx="24.5" cy="31.5" r="2.4" fill="#EAFBFD"/>
+</svg>
