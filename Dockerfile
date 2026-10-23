@@ -2,7 +2,7 @@
 # Multi-stage: build do portal Vite + runtime Node enxuto.
 
 # ── Stage 1: build do frontend ────────────────────────────────────────────
-FROM node:20-alpine AS portal-build
+FROM node:22.23.4-alpine AS portal-build
 WORKDIR /build
 
 # Instala devDeps (vite, @vitejs/plugin-react). --include=dev garante isso
@@ -18,7 +18,7 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:22.23.4-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -36,7 +36,7 @@ COPY src/ ./src/
 # SPA buildado vem do stage anterior
 COPY --from=portal-build /build/dist ./portal-tecnico/dist
 
-# Healthcheck via /api/health usando fetch nativo do Node 20 (sem dep de wget/curl).
+# Healthcheck via /api/health usando fetch nativo do Node (sem dep de wget/curl).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://localhost:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
